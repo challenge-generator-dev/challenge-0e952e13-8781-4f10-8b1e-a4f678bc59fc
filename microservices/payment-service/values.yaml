@@ -1,0 +1,187 @@
+# Valores dinámicos para el despliegue del servicio de pagos
+# Este archivo contiene la configuración que se puede personalizar por entorno
+
+# Configuración de la imagen del contenedor
+image:
+  repository: myregistry/payment-service
+  tag: latest
+  pullPolicy: IfNotPresent
+  # Puerto en el que escucha la aplicación dentro del contenedor
+  port: 8080
+
+# Configuración de réplicas y estrategia de despliegue
+replicaCount: 3
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# Recursos computacionales para el contenedor
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# Configuración de Health Checks (Liveness y Readiness)
+# Estos probes garantizan que el contenedor esté saludable antes de recibir tráfico
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
+# Variables de entorno para la aplicación
+# Se usan para configurar la conexión a la base de datos, servicios externos, etc.
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "production"
+  - name: DATABASE_HOST
+    valueFrom:
+      secretKeyRef:
+        name: payment-db-secret
+        key: host
+  - name: DATABASE_PORT
+    value: "5432"
+  - name: PAYMENT_GATEWAY_URL
+    value: "https://api.payment-gateway.com"
+  - name: PAYMENT_GATEWAY_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: payment-gateway-secret
+        key: api-key
+  - name: LOG_LEVEL
+    value: "INFO"
+  - name: METRICS_ENABLED
+    value: "true"
+
+# Configuración del Service para exponer el microservicio
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  # Nombre del service - se usa para discovery interno
+  name: payment-service
+  annotations:
+    # Annotations para Prometheus que permiten el scraping de métricas
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/actuator/prometheus"
+
+# Configuración de Ingress para exposición externa (opcional)
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  hosts:
+    - host: payments.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: payment-service-tls
+      hosts:
+        - payments.example.com
+
+# Configuración de Horizontal Pod Autoscaler (HPA)
+# Permite escalar automáticamente basado en uso de CPU y memoria
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  # Behavior define la velocidad de scaling up y down
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+
+# Configuración de Pod Disruption Budget para alta disponibilidad
+# Garantiza que siempre haya un mínimo de pods disponibles durante mantenimiento
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Tolerancias y afinidad para control de scheduling
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "payment"
+    effect: "NoSchedule"
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - payment-service
+          topologyKey: kubernetes.io/hostname
+
+# Volumes adicionales si son necesarios (ej. para logs persistentes)
+volumes:
+  - name: payment-logs
+    emptyDir: {}
+
+# Configuración de ConfigMap para archivos de configuración
+configMaps:
+  - name: payment-config
+    data:
+      application.properties: |
+        server.port=8080
+        spring.application.name=payment-service
+        payment.retry.max-attempts=3
+        payment.timeout=30000
+
+# Secrets externos referenciados
+# Los valores reales se definen en archivos secretos de Kubernetes
+secretRefs:
+  - name: payment-db-secret
+  - name: payment-gateway-secret
+
+# Políticas de red del cluster (NetworkPolicy)
+networkPolicy:
+  enabled: true
+  # Ingress permitido desde API Gateway y servicios relacionados
+  ingressFrom:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+    - podSelector:
+        matchLabels:
+          app: user-service

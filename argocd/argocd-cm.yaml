@@ -1,0 +1,231 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/instance: argocd
+    app.kubernetes.io/part-of: argocd
+data:
+  # URL pública del servidor ArgoCD para acceso externo
+  url: https://argocd.platform.example.com
+  
+  # Configuración del recurso raíz de ArgoCD
+  # El recurso raíz es el Application que contiene todas las aplicaciones
+  resource.customizations: |
+    argoproj.io/Application:
+      health.lua: |
+        hs = {}
+        hs.status = "Progressing"
+        hs.message = ""
+        if obj.status ~= nil then
+          if obj.status.health ~= nil then
+            hs.status = obj.status.health.status
+            if obj.status.health.message ~= nil then
+              hs.message = obj.status.health.message
+            end
+          end
+        end
+        return hs
+    argoproj.io/AppProject:
+      health.lua: |
+        return {status = "Healthy", message = "AppProject is healthy"}
+
+  # Política de sincronización automática para aplicaciones
+  # Habilita la sincronización automática cuando hay cambios en Git
+  application.instanceLabelKey: argocd.argoproj.io/instance
+  
+  # Configuración de recursos ignoreDifferences para campos mutables
+  # Estos campos se ignoran durante la sincronización
+  resource.compareoptions: |
+    ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+      - /spec/replicas
+    - group: ""
+      kind: ConfigMap
+      jsonPointers:
+      - /data
+    - group: ""
+      kind: Secret
+      jsonPointers:
+      - /data
+
+  # Configuración de tiempo de espera para operaciones
+  # Tiempo máximo para sincronización de recursos en segundos
+  resource.timeout: "3600"
+  
+  # Configuración de conexión a repositorios
+  # Tipo de conexión: git
+  repository.credentials: |
+    - type: git
+      url: https://github.com/organization/platform-repo
+      name: platform-repo
+
+  # Configuración de políticas de sincronización por defecto
+  # Aplica a todas las aplicaciones si no se especifica explícitamente
+  syncPolicy.default: |
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - CreateNamespace=true
+    - PruneLast=true
+    - PrunePropagationPolicy=foreground
+    - Replace=false
+    - ServerSideApply=false
+
+  # Configuración de retry para sincronizaciones fallidas
+  # Número de reintentos y tiempo de espera entre ellos
+  retry.retryLimit: "5"
+  retry.retryBackoffDuration: "5s"
+  retry.retryBackoffFactor: "2"
+  retry.retryBackoffMaxDuration: "3m"
+
+  # Configuración de usuarios y permisos
+  # usuarios: |
+  #   admin:
+  #     password: <encrypted_password>
+  #     email: admin@example.com
+  #     groups:
+  #       - admins
+
+  # Configuración de notificaciones (integración con sistemas externos)
+  # notifications: |
+  #   enabled: true
+  #   webhook:
+  #     argocd:
+  #       - url: https://argocd.notifications.svc:9090/api/webhook
+
+  # Configuración de TLS y certificados
+  # tls.config: |
+  #   - name: example.com
+  #     ca: |
+  #       -----BEGIN CERTIFICATE-----
+  #       ...
+  #       -----END CERTIFICATE-----
+
+  # Configuración de recursos mínimo y máximo para aplicaciones
+  # Límites de recursos que ArgoCD puede gestionar
+  resource.limits: |
+    cpu: "4000"
+    memory: "8192"
+    persistentvolumeclaims: "50"
+    services: "100"
+    configmaps: "100"
+    pods: "500"
+    jobs: "100"
+    cronjobs: "50"
+    roles: "50"
+    rolebindings: "50"
+
+  # Configuración de análisis de salud personalizado
+  # Define cómo ArgoCD evalúa la salud de recursos específicos
+  resource.health: |
+    customizations:
+      CustomResourceDefinition:
+        health.lua: |
+          return {status = "Healthy", message = "CRD is installed"}
+      Ingress:
+        health.lua: |
+          hs = {}
+          hs.status = "Progressing"
+          hs.message = ""
+          if obj.status ~= nil then
+            if obj.status.loadBalancer ~= nil then
+              if obj.status.loadBalancer.ingress ~= nil then
+                if #obj.status.loadBalancer.ingress > 0 then
+                  hs.status = "Healthy"
+                  hs.message = "LoadBalancer is provisioned"
+                end
+              end
+            end
+          end
+          return hs
+      Service:
+        health.lua: |
+          return {status = "Healthy", message = "Service is healthy"}
+      Deployment:
+        health.lua: |
+          hs = {}
+          hs.status = "Progressing"
+          hs.message = ""
+          if obj.status ~= nil then
+            if obj.status.readyReplicas ~= nil then
+              if obj.status.readyReplicas == obj.spec.replicas then
+                hs.status = "Healthy"
+                hs.message = "Deployment is ready"
+              elseif obj.status.readyReplicas < obj.spec.replicas then
+                hs.status = "Progressing"
+                hs.message = "Waiting for rollout"
+              end
+            end
+          end
+          return hs
+      StatefulSet:
+        health.lua: |
+          hs = {}
+          hs.status = "Progressing"
+          hs.message = ""
+          if obj.status ~= nil then
+            if obj.status.readyReplicas ~= nil then
+              if obj.status.readyReplicas == obj.spec.replicas then
+                hs.status = "Healthy"
+                hs.message = "StatefulSet is ready"
+              end
+            end
+          end
+          return hs
+
+  # Configuración de comportamiento de garbage collection
+  # Recursos huérfanos se limpian automáticamente
+  gc.background: "true"
+  gc.minInterval: "24h"
+
+  # Configuración de métricas y telemetría
+  # Habilita métricas para Prometheus
+  metrics.enabled: "true"
+  metrics.port: "8082"
+  metrics.serviceMonitor.enabled: "true"
+  metrics.serviceMonitor.interval: "30s"
+
+  # Configuración de server.governance
+  # Habilita políticas de gobernanza
+  # server.governance: enabled
+
+  # Configuración de autenticación externa
+  # Para integración con proveedores OIDC como Okta, Keycloak, etc.
+  # oidc.config: |
+  #   name: Okta
+  #   issuer: https://dev-example.okta.com
+  #   clientID: aabbccdd-1234-5678-90ef-ghijklmnop
+  #   clientSecret: $oidc.okta.clientSecret
+  #   requestedScopes:
+  #     - openid
+  #     - profile
+  #     - email
+  #   requestedIDTokenClaims:
+  #     groups: 
+  #       essential: true
+
+  # Configuración de sesión de usuario
+  # Tiempo de expiración de sesión en segundos
+  server.session.maxage: "86400"
+  server.session.insecure: "false"
+
+  # Configuración de política de contraseñas
+  # passwordPattern: "^((?=.*\\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*])).{8,}$"
+
+  # Configuración de recursos de destino por defecto
+  # Namespace por defecto donde se despliegan los recursos
+  application.destination.defaultNamespace: default
+  
+  # Servidor Kubernetes por defecto
+  # Puede ser "in-cluster" o una URL de cluster remoto
+  application.destination.server: https://kubernetes.default.svc
+
+  # Configuración de build environment
+  # environment: production

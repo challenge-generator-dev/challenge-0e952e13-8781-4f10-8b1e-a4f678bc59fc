@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "auth-service.fullname" . }}
+  labels:
+    {{- include "auth-service.labels" . | nindent 4 }}
+    app.kubernetes.io/component: service
+  annotations:
+    description: "Servicio de autenticación para la plataforma de microservicios"
+    {{- if .Values.service.annotations }}
+    {{- toYaml .Values.service.annotations | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- if (eq .Values.service.type "ClusterIP") }}
+  clusterIP: {{ .Values.service.clusterIP | default "" }}
+  {{- end }}
+  {{- if (eq .Values.service.type "LoadBalancer") }}
+  loadBalancerIP: {{ .Values.service.loadBalancerIP | default "" }}
+  {{- if .Values.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml .Values.service.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  ports:
+    - name: http
+      port: {{ .Values.service.ports.http }}
+      targetPort: {{ .Values.service.targetPorts.http }}
+      protocol: TCP
+      {{- if (and (eq .Values.service.type "NodePort") .Values.service.nodePorts.http) }}
+      nodePort: {{ .Values.service.nodePorts.http }}
+      {{- end }}
+    {{- if .Values.service.ports.https }}
+    - name: https
+      port: {{ .Values.service.ports.https }}
+      targetPort: {{ .Values.service.targetPorts.https }}
+      protocol: TCP
+      {{- if (and (eq .Values.service.type "NodePort") .Values.service.nodePorts.https) }}
+      nodePort: {{ .Values.service.nodePorts.https }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.service.ports.metrics }}
+    - name: metrics
+      port: {{ .Values.service.ports.metrics }}
+      targetPort: {{ .Values.service.targetPorts.metrics }}
+      protocol: TCP
+    {{- end }}
+  selector:
+    {{- include "auth-service.selectorLabels" . | nindent 4 }}
+  {{- if .Values.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  {{- end }}
+  {{- if .Values.service.sessionAffinity }}
+  sessionAffinity: {{ .Values.service.sessionAffinity }}
+  {{- end }}
+  {{- if .Values.service.healthCheckNodePort }}
+  healthCheckNodePort: {{ .Values.service.healthCheckNodePort }}
+  {{- end }}
+---
+# Configuración de endpoints para service mesh si está habilitado
+{{- if .Values.service.mesh.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "auth-service.fullname" . }}-mesh
+  labels:
+    {{- include "auth-service.labels" . | nindent 4 }}
+    app.kubernetes.io/component: service-mesh
+  annotations:
+    service.kubernetes.io/backend-protocol: "GRPC"
+    {{- if eq .Values.service.mesh.provider "istio" }}
+    traffic.sidecar.istio.io/includeOutboundPorts: "{{ .Values.service.ports.http }}"
+    {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: {{ .Values.service.ports.grpc }}
+      targetPort: {{ .Values.service.targetPorts.grpc }}
+      protocol: TCP
+  selector:
+    {{- include "auth-service.selectorLabels" . | nindent 4 }}
+{{- end }}

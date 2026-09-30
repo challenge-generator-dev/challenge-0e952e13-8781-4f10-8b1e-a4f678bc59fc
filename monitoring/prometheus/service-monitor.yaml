@@ -1,0 +1,194 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: auth-service-monitor
+  labels:
+    release: prometheus
+    app: auth-service
+    tier: backend
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: auth-service
+      tier: backend
+  namespaceSelector:
+    matchNames:
+      - microservices
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 10s
+      scrapeTimeout: 5s
+      scheme: http
+      tlsConfig:
+        insecureSkipVerify: false
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_service_name]
+          target_label: service
+          replacement: auth-service
+        - sourceLabels: [__meta_kubernetes_namespace]
+          target_label: namespace
+          replacement: microservices
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          target_label: pod
+        - action: labelmap
+          regex: __meta_kubernetes_service_label_(.+)
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: user-service-monitor
+  labels:
+    release: prometheus
+    app: user-service
+    tier: backend
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: user-service
+      tier: backend
+  namespaceSelector:
+    matchNames:
+      - microservices
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 10s
+      scrapeTimeout: 5s
+      scheme: http
+      tlsConfig:
+        insecureSkipVerify: false
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_service_name]
+          target_label: service
+          replacement: user-service
+        - sourceLabels: [__meta_kubernetes_namespace]
+          target_label: namespace
+          replacement: microservices
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          target_label: pod
+        - action: labelmap
+          regex: __meta_kubernetes_service_label_(.+)
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: payment-service-monitor
+  labels:
+    release: prometheus
+    app: payment-service
+    tier: backend
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: payment-service
+      tier: backend
+  namespaceSelector:
+    matchNames:
+      - microservices
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 10s
+      scrapeTimeout: 5s
+      scheme: http
+      tlsConfig:
+        insecureSkipVerify: false
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_service_name]
+          target_label: service
+          replacement: payment-service
+        - source_labels: [__meta_kubernetes_namespace]
+          target_label: namespace
+          replacement: microservices
+        - source_labels: [__meta_kubernetes_pod_name]
+          target_label: pod
+        - action: labelmap
+          regex: __meta_kubernetes_service_label_(.+)
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: microservices-pod-monitor
+  labels:
+    release: prometheus
+    tier: backend
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      tier: backend
+  namespaceSelector:
+    matchNames:
+      - microservices
+  podMetricsEndpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scheme: http
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          target_label: pod
+        - sourceLabels: [__meta_kubernetes_namespace]
+          target_label: namespace
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: microservices-alerts
+  labels:
+    release: prometheus
+  namespace: monitoring
+spec:
+  groups:
+    - name: microservices.rules
+      rules:
+        - alert: HighErrorRate
+          expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Alta tasa de errores en {{ $labels.service }}"
+            description: "El servicio {{ $labels.service }} tiene una tasa de errores del {{ $value | humanizePercentage }}"
+
+        - alert: HighLatency
+          expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.5
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Latencia elevada en {{ $labels.service }}"
+            description: "P95 latency es {{ $value }}s"
+
+        - alert: ServiceDown
+          expr: up{job=~".*-service"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Servicio {{ $labels.service }} no disponible"
+            description: "El servicio ha estado недоступен por más de 1 minuto"
+
+        - alert: HighMemoryUsage
+          expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) > 0.85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Uso de memoria elevado en {{ $labels.pod }}"
+            description: "Uso de memoria al {{ $value | humanizePercentage }} del límite"
+
+        - alert: HighCPUUsage
+          expr: rate(container_cpu_usage_seconds_total[5m]) > 0.80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Uso de CPU elevado en {{ $labels.pod }}"
+            description: "Uso de CPU al {{ $value | humanizePercentage }}"

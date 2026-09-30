@@ -1,0 +1,40 @@
+apiVersion: v2
+name: user-service
+description: |
+  Chart de Helm para el servicio de usuarios de la plataforma de microservicios.
+  Este servicio gestiona las operaciones CRUD de usuarios, perfil y preferencias.
+  Implementa alta disponibilidad con soporte para escalamiento horizontal automático.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - microservicio
+  - usuarios
+  - kubernetes
+  - helm
+  - plataforma
+home: https://plataforma-microservicios.example.com
+sources:
+  - https://github.com/organization/plataforma-microservicios
+maintainers:
+  - name: Equipo DevOps
+    email: devops@empresa.com
+    url: https://devops.empresa.com
+dependencies:
+  - name: common
+    version: "1.18.0"
+    repository: "https://charts.bitnami.com/bitnami"
+  - name: postgresql
+    version: "12.12.10"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
+    alias: database
+annotations:
+  category: Application
+  licenses: Apache-2.0
+  tags:
+    - plataforma
+    - microservicio
+    - usuarios
+    - kubernetes
+    - gitops

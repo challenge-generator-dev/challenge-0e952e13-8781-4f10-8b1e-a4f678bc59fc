@@ -1,0 +1,39 @@
+apiVersion: v2
+name: payment-service
+description: Helm chart for Payment Microservice - Handles payment processing with high availability
+type: application
+version: 1.0.0
+appVersion: "2.5.0"
+kubeVersion: ">=1.28.0"
+keywords:
+  - payment
+  - microservice
+  - fintech
+  - kubernetes
+maintainers:
+  - name: Platform Team
+    email: platform@example.com
+    url: https://example.com/team
+dependencies:
+  - name: common
+    version: "1.18.0"
+    repository: "https://charts.bitnami.com/common"
+  - name: postgresql
+    version: "12.12.10"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
+    alias: database
+  - name: redis
+    version: "17.15.0"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
+    alias: cache
+annotations:
+  category: Application
+  licenses: Apache-2.0
+  maintainers: |
+    Platform Team - platform@example.com
+  tags:
+    - payment
+    - transaction-processing
+    - pci-dss

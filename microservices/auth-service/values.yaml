@@ -1,0 +1,205 @@
+replicaCount: 3
+
+image:
+  repository: empresa/auth-service
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  hosts:
+    - host: auth.plataforma.empresa.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: auth-service-tls
+      hosts:
+        - auth.plataforma.empresa.com
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+startupProbe:
+  httpGet:
+    path: /health/ready
+    port: 8080
+  initialDelaySeconds: 0
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 30
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app: auth-service
+          topologyKey: kubernetes.io/hostname
+  podDisruptionBudget:
+    minAvailable: 2
+
+configMaps:
+  application.yml: |-
+    server:
+      port: 8080
+    
+    jwt:
+      secret: ${JWT_SECRET}
+      expiration: 3600000
+    
+    database:
+      host: ${DB_HOST}
+      port: 5432
+      name: ${DB_NAME}
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+      pool:
+        min: 5
+        max: 20
+    
+    redis:
+      host: ${REDIS_HOST}
+      port: 6379
+      password: ${REDIS_PASSWORD}
+      database: 0
+    
+    logging:
+      level: INFO
+      format: json
+    
+    metrics:
+      enabled: true
+      export:
+        prometheus:
+          enabled: true
+          path: /metrics
+
+secrets:
+  jwtSecret: ""
+  dbPassword: ""
+  redisPassword: ""
+
+env:
+  - name: JWT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: auth-service-secrets
+        key: jwt-secret
+  - name: DB_HOST
+    valueFrom:
+      configMapKeyRef:
+        name: auth-service-config
+        key: db-host
+  - name: DB_USERNAME
+    value: "authuser"
+  - name: REDIS_HOST
+    valueFrom:
+      configMapKeyRef:
+        name: auth-service-config
+        key: redis-host
+
+persistence:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
